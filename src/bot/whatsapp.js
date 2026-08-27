@@ -26,6 +26,7 @@ export async function startWhatsApp({ onMessage, log }) {
 
   let sock;
   let closed = false;
+  let currentQr = null;
 
   function connect() {
     sock = makeWASocket({
@@ -43,11 +44,15 @@ export async function startWhatsApp({ onMessage, log }) {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
+        currentQr = qr;
         log.info('Scan this QR with WhatsApp → Linked devices');
         qrcode.generate(qr, { small: true });
       }
 
-      if (connection === 'open') log.info('WhatsApp connected');
+      if (connection === 'open') {
+        currentQr = null;
+        log.info('WhatsApp connected');
+      }
 
       if (connection === 'close') {
         const status = lastDisconnect?.error?.output?.statusCode;
@@ -109,6 +114,10 @@ export async function startWhatsApp({ onMessage, log }) {
     async send(jid, text) {
       if (!sock) throw new Error('WhatsApp socket not ready');
       await sock.sendMessage(jid, { text });
+    },
+    /** Latest unscanned QR payload, or null once linked. For the /qr HTTP route. */
+    getQr() {
+      return currentQr;
     },
     stop() {
       closed = true;

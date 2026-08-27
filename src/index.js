@@ -20,7 +20,7 @@ async function main() {
   });
 
   const scheduler = startScheduler({ store, sendReply: wa.send, log });
-  const health = startHealthServer(log);
+  const health = startHealthServer(log, { getQr: wa.getQr });
 
   const shutdown = async () => {
     log.info('shutting down');
