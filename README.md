@@ -63,7 +63,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"  # → 
 npm start
 ```
 
-Scan the QR code that prints to link WhatsApp, then message the bot `link` for setup instructions.
+Scan the QR code that prints to link WhatsApp, then message the bot `/start` — that's the only thing it responds to unprompted; everything else happens by navigating the menu it shows.
 
 ### Tests
 
@@ -71,7 +71,7 @@ Scan the QR code that prints to link WhatsApp, then message the bot `link` for s
 npm test
 ```
 
-73 tests across parsing, cookie extraction, session orchestration, command routing, scheduling, and the rendering pipeline (all mocked — nothing hits the live site in CI).
+80 tests across parsing, cookie extraction, session orchestration, command routing, scheduling, and the rendering pipeline (all mocked — nothing hits the live site in CI).
 
 ### Docker / deployment
 

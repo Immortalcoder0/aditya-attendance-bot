@@ -21,9 +21,8 @@ function shortName(name, max = 22) {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
-export function formatMenu(user) {
-  const linked = Boolean(user?.session);
-  const lines = [
+export function formatMainMenu() {
+  return [
     '*📚 Attendance Bot*',
     '',
     'Reply with a number:',
@@ -33,12 +32,44 @@ export function formatMenu(user) {
     '*3* · Bunk calculator',
     '*4* · Subjects below target',
     '*5* · Settings',
+  ].join('\n');
+}
+
+export function formatSettingsMenu(user) {
+  return [
+    '*⚙️ Settings*',
     '',
-  ];
-  if (!linked) {
-    lines.push('⚠️ Not linked yet — send *link* to see how to connect your Campus Connect account.');
-  }
-  return lines.join('\n');
+    `Target: *${pct((user.target ?? 0.75) * 100)}*`,
+    `Daily summary: *${user.dailySummary ? 'on' : 'off'}*`,
+    `Account linked: *${user.session ? 'yes' : 'no'}*`,
+    '',
+    'Reply with a number:',
+    '',
+    '*1* · Change target %',
+    '*2* · Toggle daily summary',
+    '*3* · Link / relink account',
+    '*4* · Unlink (delete everything)',
+    '*5* · Back to menu',
+  ].join('\n');
+}
+
+export function formatTargetPrompt() {
+  return 'Reply with your new target as a number between 1 and 100 (e.g. *80*).';
+}
+
+export function formatTargetInvalid() {
+  return "That's not a number between 1 and 100 — try again, or send */start* to cancel.";
+}
+
+export function formatUnlinkConfirm() {
+  return [
+    '⚠️ *Delete everything?*',
+    '',
+    "This removes your session and all settings this bot has stored about you. You'll need to relink from scratch.",
+    '',
+    '*1* · Yes, delete everything',
+    '*2* · Cancel',
+  ].join('\n');
 }
 
 export function formatOverall(attendance, target) {
@@ -133,22 +164,6 @@ export function formatBelowTarget(attendance, target) {
   return lines.join('\n');
 }
 
-export function formatSettings(user) {
-  return [
-    '*⚙️ Settings*',
-    '',
-    `Target: *${pct((user.target ?? 0.75) * 100)}*`,
-    `Daily summary: *${user.dailySummary ? 'on' : 'off'}*`,
-    `Account linked: *${user.session ? 'yes' : 'no'}*`,
-    '',
-    'Commands:',
-    '• *target 80* — change your target %',
-    '• *daily on* / *daily off* — daily summary',
-    '• *link* — how to (re)connect your session',
-    '• *unlink* — delete everything this bot has stored about you',
-  ].join('\n');
-}
-
 export function formatDailySummary(attendance, target) {
   const below = subjectsBelow(attendance, target);
   const head = `*📅 Daily attendance summary*\n\n*${pct(attendance.total.percent)}* overall (${attendance.total.attended}/${attendance.total.held})`;
@@ -176,7 +191,7 @@ export function formatSessionExpired() {
   return [
     '🔒 *Your Campus Connect session expired*',
     '',
-    'Send *link* to see how to reconnect — it takes about a minute.',
+    'Send */start* → Settings → Link / relink account to reconnect — it takes about a minute.',
   ].join('\n');
 }
 
@@ -190,10 +205,7 @@ export function formatLinkInstructions() {
     '2. Press *F12* to open DevTools.',
     '3. Go to *Network* → click any request → *Headers* tab, *or* go to *Application* → *Cookies* → the info.aec.edu.in row.',
     '4. Select everything you see there and copy it — don\'t worry about being precise, grab the whole block.',
-    '5. Paste it here after the word "session":',
-    '```',
-    'session PASTE_HERE',
-    '```',
+    '5. Paste it here as your next message.',
     '',
     "_I'll pull out what I need automatically, however messy the paste is. DevTools isn't available on phone browsers, so this needs a computer — but only this one time. Once linked, I keep the session alive on my own for as long as this bot keeps running._",
   ].join('\n');
@@ -204,8 +216,6 @@ export function formatLinkSuccess(attendance) {
     '✅ *Session linked!*',
     '',
     `Current overall attendance: *${pct(attendance.total.percent)}*`,
-    '',
-    'Send *menu* to see what I can do.',
   ].join('\n');
 }
 
@@ -213,7 +223,7 @@ export function formatLinkInvalid() {
   return [
     "❌ I found something cookie-shaped in that, but it looks invalid or already expired.",
     '',
-    "Make sure you're copying from a tab where you're currently logged in, then resend: *session PASTE_HERE*",
+    "Make sure you're copying from a tab where you're currently logged in, then paste it again.",
   ].join('\n');
 }
 
@@ -221,7 +231,7 @@ export function formatLinkUnrecognized() {
   return [
     "🤔 I couldn't find anything cookie-shaped in that paste.",
     '',
-    "Send *link* to see the steps again — copying the whole *Headers* panel or the whole *Application → Cookies* table both work, so grab more rather than less.",
+    "Copying the whole *Headers* panel or the whole *Application → Cookies* table both work, so grab more rather than less — try pasting again.",
   ].join('\n');
 }
 

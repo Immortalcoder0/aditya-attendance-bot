@@ -2,12 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  formatMenu,
+  formatMainMenu,
+  formatSettingsMenu,
+  formatTargetPrompt,
+  formatTargetInvalid,
+  formatUnlinkConfirm,
   formatOverall,
   formatSubjects,
   formatBunkReport,
   formatBelowTarget,
-  formatSettings,
   formatDailySummary,
   formatLowAttendanceAlert,
 } from './format.js';
@@ -17,9 +20,10 @@ import { PROFILE_HTML } from '../portal/__fixtures__/profile.js';
 const attendance = parseAttendance(PROFILE_HTML);
 const TARGET = 0.75;
 
-test('formatMenu flags an unlinked user and hides the warning once linked', () => {
-  assert.match(formatMenu({ session: null }), /Not linked yet/);
-  assert.doesNotMatch(formatMenu({ session: 'cookie=x' }), /Not linked yet/);
+test('formatMainMenu lists all five options', () => {
+  const text = formatMainMenu();
+  assert.match(text, /\*1\*/);
+  assert.match(text, /\*5\*/);
 });
 
 test('formatOverall reports the real total and how many classes must be attended', () => {
@@ -60,11 +64,25 @@ test('formatBelowTarget congratulates when nothing is below target', () => {
   assert.match(formatBelowTarget(allGood, TARGET), /Nice/);
 });
 
-test('formatSettings reflects target, daily summary, and link state', () => {
-  const text = formatSettings({ target: 0.8, dailySummary: false, session: 'cookie=x' });
+test('formatSettingsMenu reflects target, daily summary, and link state', () => {
+  const text = formatSettingsMenu({ target: 0.8, dailySummary: false, session: 'cookie=x' });
   assert.match(text, /80\.00%/);
   assert.match(text, /off/);
   assert.match(text, /yes/);
+});
+
+test('formatTargetPrompt asks for a number', () => {
+  assert.match(formatTargetPrompt(), /number/i);
+});
+
+test('formatTargetInvalid mentions /start as an escape hatch', () => {
+  assert.match(formatTargetInvalid(), /\/start/);
+});
+
+test('formatUnlinkConfirm offers exactly a confirm and cancel option', () => {
+  const text = formatUnlinkConfirm();
+  assert.match(text, /\*1\*/);
+  assert.match(text, /\*2\*/);
 });
 
 test('formatDailySummary calls out below-target subjects, worst three', () => {

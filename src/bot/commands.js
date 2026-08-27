@@ -2,12 +2,15 @@ import { fetchAttendance, SessionExpiredError } from '../portal/client.js';
 import { ensureSession, SessionResult } from '../portal/session.js';
 import { extractCookieHeader } from './cookieInput.js';
 import {
-  formatMenu,
+  formatMainMenu,
+  formatSettingsMenu,
+  formatTargetPrompt,
+  formatTargetInvalid,
+  formatUnlinkConfirm,
   formatOverall,
   formatSubjects,
   formatBunkReport,
   formatBelowTarget,
-  formatSettings,
   formatSessionExpired,
   formatLinkInstructions,
   formatLinkSuccess,
@@ -16,25 +19,38 @@ import {
 } from './format.js';
 
 /**
- * Command routing for incoming WhatsApp messages.
+ * Menu-driven command routing.
  *
- * Every data command hits the portal live rather than serving the stored snapshot,
- * because "is this current?" is the whole point of the bot. The snapshot exists
- * only for alerts and for answering when the portal is unreachable.
+ * The bot only ever initiates on "/start" — everything else is either a reply
+ * to whatever menu/prompt was most recently shown (tracked per user in
+ * `flow`), or gets silently ignored. There is no free-text command surface;
+ * "/start" is the one and only entry point, by design.
+ *
+ * `flow` is in-memory, not persisted — a restart mid-flow just means the user
+ * sends /start again, which is an acceptable reset.
  */
 
-const SESSION_MESSAGE_RE = /^session\s+(.+)$/is;
+const Step = Object.freeze({
+  MAIN_MENU: 'main_menu',
+  SETTINGS_MENU: 'settings_menu',
+  AWAITING_TARGET: 'awaiting_target',
+  AWAITING_COOKIE: 'awaiting_cookie',
+  AWAITING_UNLINK_CONFIRM: 'awaiting_unlink_confirm',
+});
 
 export function createCommandHandler({ store, log }) {
+  const flow = new Map(); // waJid -> Step; absent = idle (only "/start" gets a reply)
+
   /**
-   * Make sure a usable session exists, then fetch live attendance through it.
-   * @returns {{ok: true, attendance: object} | {ok: false, message: string}}
+   * Every data command hits the portal live rather than serving the stored
+   * snapshot, because "is this current?" is the whole point of the bot.
+   * @returns {{ok: true, attendance: object} | {ok: false, message: string, needsLink?: boolean}}
    */
   async function withAttendance(waJid) {
     const session = await ensureSession(store, waJid, log);
 
     if (session.status === SessionResult.NO_SESSION) {
-      return { ok: false, message: formatLinkInstructions() };
+      return { ok: false, needsLink: true, message: formatLinkInstructions() };
     }
     if (session.status === SessionResult.ERROR) {
       const user = store.getUser(waJid);
@@ -66,91 +82,138 @@ export function createCommandHandler({ store, log }) {
     }
   }
 
-  async function handleSessionLink(waJid, rawPaste) {
+  async function tryLinkCookie(waJid, rawPaste) {
     const cookieHeader = extractCookieHeader(rawPaste);
-    if (!cookieHeader) return formatLinkUnrecognized();
+    if (!cookieHeader) return { ok: false, message: formatLinkUnrecognized() };
 
     try {
-      const { attendance, cookieHeader: freshCookieHeader } = await fetchAttendance(cookieHeader);
-      await store.setSession(waJid, freshCookieHeader);
+      const { attendance, cookieHeader: fresh } = await fetchAttendance(cookieHeader);
+      await store.setSession(waJid, fresh);
       await store.saveSnapshot(waJid, attendance);
-      return formatLinkSuccess(attendance);
+      return { ok: true, message: formatLinkSuccess(attendance) };
     } catch (err) {
-      if (err instanceof SessionExpiredError) return formatLinkInvalid();
+      if (err instanceof SessionExpiredError) return { ok: false, message: formatLinkInvalid() };
       log.warn({ err: err.message, waJid }, 'session validation failed');
-      return "⚠️ Couldn't reach Campus Connect to validate that. Try again shortly.";
+      return {
+        ok: false,
+        message: "⚠️ Couldn't reach Campus Connect to validate that. Try pasting it again shortly.",
+      };
     }
+  }
+
+  async function handleMainMenuReply(waJid, text, user) {
+    const target = user.target ?? 0.75;
+
+    if (['1', '2', '3', '4'].includes(text)) {
+      const result = await withAttendance(waJid);
+      if (!result.ok) {
+        if (result.needsLink) flow.set(waJid, Step.AWAITING_COOKIE);
+        return result.message;
+      }
+      const formatted =
+        text === '1'
+          ? formatOverall(result.attendance, target)
+          : text === '2'
+            ? formatSubjects(result.attendance, target)
+            : text === '3'
+              ? formatBunkReport(result.attendance, target)
+              : formatBelowTarget(result.attendance, target);
+      return `${formatted}\n\n${formatMainMenu()}`;
+    }
+
+    if (text === '5') {
+      flow.set(waJid, Step.SETTINGS_MENU);
+      return formatSettingsMenu(store.getUser(waJid) ?? user);
+    }
+
+    return null; // not a recognized option — stay silent rather than nag
+  }
+
+  async function handleSettingsMenuReply(waJid, text, user) {
+    if (text === '1') {
+      flow.set(waJid, Step.AWAITING_TARGET);
+      return formatTargetPrompt();
+    }
+    if (text === '2') {
+      await store.updateUser(waJid, { dailySummary: !user.dailySummary });
+      return formatSettingsMenu(store.getUser(waJid));
+    }
+    if (text === '3') {
+      flow.set(waJid, Step.AWAITING_COOKIE);
+      return formatLinkInstructions();
+    }
+    if (text === '4') {
+      flow.set(waJid, Step.AWAITING_UNLINK_CONFIRM);
+      return formatUnlinkConfirm();
+    }
+    if (text === '5') {
+      flow.set(waJid, Step.MAIN_MENU);
+      return formatMainMenu();
+    }
+    return null;
+  }
+
+  async function handleAwaitingTarget(waJid, text) {
+    const value = Number(text);
+    if (!Number.isInteger(value) || value < 1 || value > 100) {
+      return formatTargetInvalid();
+    }
+    await store.updateUser(waJid, { target: value / 100 });
+    flow.set(waJid, Step.SETTINGS_MENU);
+    return `✅ Target set to *${value}%*.\n\n${formatSettingsMenu(store.getUser(waJid))}`;
+  }
+
+  async function handleAwaitingCookie(waJid, text) {
+    const result = await tryLinkCookie(waJid, text);
+    if (result.ok) {
+      flow.set(waJid, Step.MAIN_MENU);
+      return `${result.message}\n\n${formatMainMenu()}`;
+    }
+    return result.message; // stay in AWAITING_COOKIE so a retry paste just works
+  }
+
+  async function handleUnlinkConfirm(waJid, text) {
+    if (text === '1') {
+      await store.forgetUser(waJid);
+      flow.delete(waJid);
+      return '🗑️ Done. Everything has been deleted. Send */start* to begin again.';
+    }
+    if (text === '2') {
+      flow.set(waJid, Step.SETTINGS_MENU);
+      return formatSettingsMenu(await store.ensureUser(waJid));
+    }
+    return null;
   }
 
   /** @returns {Promise<string|null>} reply text, or null to stay silent */
   async function handle(waJid, rawText) {
     const text = String(rawText ?? '').trim();
-    const lower = text.toLowerCase();
     const user = await store.ensureUser(waJid);
-    const target = user.target ?? 0.75;
 
-    // --- linking -----------------------------------------------------------
-    const sessionMatch = SESSION_MESSAGE_RE.exec(text);
-    if (sessionMatch) {
-      return handleSessionLink(waJid, sessionMatch[1].trim());
-    }
-    if (lower === 'link' || lower === 'relink') {
-      return formatLinkInstructions();
+    // The one and only entry point — works from any state, resets the flow.
+    if (text.toLowerCase() === '/start') {
+      flow.set(waJid, Step.MAIN_MENU);
+      return formatMainMenu();
     }
 
-    if (lower === 'unlink' || lower === 'delete me' || lower === 'forget me') {
-      await store.forgetUser(waJid);
-      return '🗑️ Done. Your session and all stored data have been deleted.';
-    }
+    const step = flow.get(waJid);
+    if (!step) return null; // idle: nothing but "/start" gets a reply
 
-    // --- settings ----------------------------------------------------------
-    const targetMatch = /^target\s+(\d{1,3})%?$/.exec(lower);
-    if (targetMatch) {
-      const value = Number(targetMatch[1]);
-      if (value < 1 || value > 100) return '⚠️ Target must be between 1 and 100.';
-      await store.updateUser(waJid, { target: value / 100 });
-      return `✅ Target set to *${value}%*.`;
+    switch (step) {
+      case Step.MAIN_MENU:
+        return handleMainMenuReply(waJid, text, user);
+      case Step.SETTINGS_MENU:
+        return handleSettingsMenuReply(waJid, text, user);
+      case Step.AWAITING_TARGET:
+        return handleAwaitingTarget(waJid, text);
+      case Step.AWAITING_COOKIE:
+        return handleAwaitingCookie(waJid, text);
+      case Step.AWAITING_UNLINK_CONFIRM:
+        return handleUnlinkConfirm(waJid, text);
+      default:
+        return null;
     }
-
-    if (lower === 'daily on' || lower === 'daily off') {
-      const on = lower.endsWith('on');
-      await store.updateUser(waJid, { dailySummary: on });
-      return `✅ Daily summary turned *${on ? 'on' : 'off'}*.`;
-    }
-
-    // --- data --------------------------------------------------------------
-    if (lower === '1' || lower === 'attendance' || lower === 'overall') {
-      const result = await withAttendance(waJid);
-      return result.ok ? formatOverall(result.attendance, target) : result.message;
-    }
-
-    if (lower === '2' || lower === 'subjects' || lower === 'subject') {
-      const result = await withAttendance(waJid);
-      return result.ok ? formatSubjects(result.attendance, target) : result.message;
-    }
-
-    if (lower === '3' || lower === 'bunk' || lower === 'bunks') {
-      const result = await withAttendance(waJid);
-      return result.ok ? formatBunkReport(result.attendance, target) : result.message;
-    }
-
-    if (lower === '4' || lower === 'low' || lower === 'below') {
-      const result = await withAttendance(waJid);
-      return result.ok ? formatBelowTarget(result.attendance, target) : result.message;
-    }
-
-    if (lower === '5' || lower === 'settings') {
-      return formatSettings(store.getUser(waJid) ?? user);
-    }
-
-    if (['hi', 'hey', 'hello', 'menu', 'help', 'start', '0'].includes(lower)) {
-      return formatMenu(store.getUser(waJid) ?? user);
-    }
-
-    // Unknown input: show the menu rather than an error, so the bot is
-    // discoverable for someone who has never used it.
-    return formatMenu(store.getUser(waJid) ?? user);
   }
 
-  return { handle, withAttendance };
+  return { handle };
 }

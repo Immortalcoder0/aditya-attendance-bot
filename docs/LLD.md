@@ -145,7 +145,7 @@ Both assume every future class is either attended or skipped (no partial credit)
 
 ## 7. Testing strategy
 
-73 tests, all offline — no test hits the live portal. Three layers:
+80 tests, all offline — no test hits the live portal. Three layers:
 
 1. **Fixture-based parsing** (`parse.test.js`) — a captured, structurally-accurate HTML fixture (`__fixtures__/profile.js`) exercises every parsing edge case found in the real markup: hyphenated course names, single-digit faculty IDs, a colspan'd total row.
 2. **Mocked module boundaries** (`session.test.js`, `commands.test.js`, `scheduler.test.js`, `render.test.js`) — use Node's built-in `node:test` module mocking (`--experimental-test-module-mocks`) to fake `playwright`, `node:child_process`, and internal modules, verifying control flow (which branch fires for which server response) without any real browser or network call.
