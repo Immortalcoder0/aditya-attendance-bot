@@ -1,6 +1,7 @@
 import { fetchAttendance, SessionExpiredError } from '../portal/client.js';
 import { ensureSession, SessionResult } from '../portal/session.js';
 import { extractCookieHeader } from './cookieInput.js';
+import { renderAttendanceChart } from './chart.js';
 import {
   formatMainMenu,
   formatSettingsMenu,
@@ -9,6 +10,7 @@ import {
   formatUnlinkConfirm,
   formatOverall,
   formatSubjects,
+  formatSubjectsCaption,
   formatBunkReport,
   formatBelowTarget,
   formatSessionExpired,
@@ -110,14 +112,26 @@ export function createCommandHandler({ store, log }) {
         if (result.needsLink) flow.set(waJid, Step.AWAITING_COOKIE);
         return result.message;
       }
+
+      if (text === '2') {
+        // The chart is a nice-to-have on top of the real data, not a
+        // replacement — if rendering it fails for any reason, fall back to
+        // the plain-text breakdown rather than losing the reply entirely.
+        try {
+          const image = await renderAttendanceChart(result.attendance, target);
+          return [{ image, caption: formatSubjectsCaption(result.attendance) }, formatMainMenu()];
+        } catch (err) {
+          log.warn({ err: err.message, waJid }, 'chart rendering failed, falling back to text');
+          return [formatSubjects(result.attendance, target), formatMainMenu()];
+        }
+      }
+
       const formatted =
         text === '1'
           ? formatOverall(result.attendance, target)
-          : text === '2'
-            ? formatSubjects(result.attendance, target)
-            : text === '3'
-              ? formatBunkReport(result.attendance, target)
-              : formatBelowTarget(result.attendance, target);
+          : text === '3'
+            ? formatBunkReport(result.attendance, target)
+            : formatBelowTarget(result.attendance, target);
       return [formatted, formatMainMenu()];
     }
 

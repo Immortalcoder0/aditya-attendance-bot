@@ -127,6 +127,17 @@ export function formatSubjects(attendance, target) {
   return lines.join('\n');
 }
 
+/** Short caption for the chart image — the image already shows per-subject detail. */
+export function formatSubjectsCaption(attendance) {
+  return [
+    '*📋 Subject-wise attendance*',
+    '',
+    `*Total:* ${attendance.total.attended}/${attendance.total.held} · ${pct(attendance.total.percent)}`,
+    '',
+    `_Live from Campus Connect · ${formatTime(attendance.fetchedAt)}_`,
+  ].join('\n');
+}
+
 export function formatBunkReport(attendance, target) {
   const lines = ['*🎯 Bunk calculator*', `_Target: ${pct(target * 100)}_`, ''];
 

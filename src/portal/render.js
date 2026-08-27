@@ -164,6 +164,26 @@ export async function closeBrowser() {
   }
 }
 
+/**
+ * Renders arbitrary self-contained HTML and returns a PNG screenshot.
+ *
+ * Reuses the same real-Chrome singleton as attendance rendering — this is
+ * purely for chart images (see bot/chart.js), unrelated to the portal at all,
+ * but there's no reason to launch a second Chrome instance for it.
+ */
+export async function screenshotHtml(html, { width = 900, height = 600 } = {}) {
+  let context;
+  try {
+    const browser = await getBrowser();
+    context = await browser.newContext({ viewport: { width, height } });
+    const page = await context.newPage();
+    await page.setContent(html, { waitUntil: 'domcontentloaded' });
+    return await page.screenshot({ type: 'png' });
+  } finally {
+    await context?.close().catch(() => {});
+  }
+}
+
 function parseCookieHeader(cookieHeader, domain) {
   return cookieHeader
     .split(';')

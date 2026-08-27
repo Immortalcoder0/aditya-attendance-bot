@@ -84,10 +84,13 @@ export async function startWhatsApp({ onMessage, log }) {
         try {
           await sock.readMessages([msg.key]);
           const reply = await onMessage(jid, text);
-          // A handler can return one string or an array of strings to send as
-          // separate message bubbles (e.g. a data result, then the menu).
+          // A handler can return a string (text), an image part
+          // ({image: Buffer, caption?}), or an array mixing either — sent as
+          // separate message bubbles in order.
           for (const part of [].concat(reply ?? [])) {
-            if (part) await sock.sendMessage(jid, { text: part });
+            if (!part) continue;
+            if (typeof part === 'string') await sock.sendMessage(jid, { text: part });
+            else if (part.image) await sock.sendMessage(jid, { image: part.image, caption: part.caption });
           }
         } catch (err) {
           log.error({ err: err.message, jid }, 'failed handling message');

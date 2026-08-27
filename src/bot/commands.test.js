@@ -55,8 +55,8 @@ function fakeStore(overrides = {}) {
 
 class MockSessionExpiredError extends Error {}
 
-/** Mocks session.js and client.js, then imports a fresh commands.js against them. */
-async function loadCommandsWith(t, { sessionStatus, cookieHeader = 'cookie=x', fetchResult }) {
+/** Mocks session.js, client.js and chart.js, then imports a fresh commands.js. */
+async function loadCommandsWith(t, { sessionStatus, cookieHeader = 'cookie=x', fetchResult, chartError }) {
   t.mock.module('../portal/session.js', {
     namedExports: {
       ensureSession: async () => ({ status: sessionStatus, cookieHeader }),
@@ -74,6 +74,14 @@ async function loadCommandsWith(t, { sessionStatus, cookieHeader = 'cookie=x', f
         };
       },
       SessionExpiredError: MockSessionExpiredError,
+    },
+  });
+  t.mock.module('./chart.js', {
+    namedExports: {
+      renderAttendanceChart: async () => {
+        if (chartError) throw chartError;
+        return Buffer.from('fake-png-bytes');
+      },
     },
   });
   const { createCommandHandler } = await import(`./commands.js?t=${Math.random()}`);
@@ -134,6 +142,36 @@ test('main menu: "1" with a live session shows live overall attendance as its ow
   assert.match(reply[0], /66\.67%/);
   assert.match(reply[1], /Attendance Bot/); // menu re-shown as a separate message
   assert.ok(store.calls.some((c) => c[0] === 'saveSnapshot'));
+});
+
+test('main menu: "2" sends the attendance chart as an image, then the menu', async (t) => {
+  const createCommandHandler = await loadCommandsWith(t, { sessionStatus: 'ok' });
+  const store = fakeStore({ session: 'cookie=x' });
+  const { handle } = createCommandHandler({ store, log });
+
+  await handle('wa1', '/start');
+  const reply = await handle('wa1', '2');
+  assert.ok(Array.isArray(reply));
+  assert.equal(reply.length, 2);
+  assert.ok(Buffer.isBuffer(reply[0].image));
+  assert.match(reply[0].caption, /Subject-wise attendance/);
+  assert.match(reply[1], /Attendance Bot/);
+});
+
+test('main menu: "2" falls back to the text breakdown if chart rendering fails', async (t) => {
+  const createCommandHandler = await loadCommandsWith(t, {
+    sessionStatus: 'ok',
+    chartError: new Error('chrome crashed'),
+  });
+  const store = fakeStore({ session: 'cookie=x' });
+  const { handle } = createCommandHandler({ store, log });
+
+  await handle('wa1', '/start');
+  const reply = await handle('wa1', '2');
+  assert.ok(Array.isArray(reply));
+  assert.match(reply[0], /Subject-wise attendance/);
+  assert.doesNotMatch(reply[0], /\[object/); // definitely text, not a stray object
+  assert.match(reply[1], /Attendance Bot/);
 });
 
 test('main menu: "3" shows the bunk calculator', async (t) => {
