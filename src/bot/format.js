@@ -116,10 +116,10 @@ export function formatSubjects(attendance, target) {
     const ratio = s.held > 0 ? s.attended / s.held : 0;
     lines.push(`${statusIcon(ratio, target)} *${cleanName(s.name)}*`);
     lines.push(`${progressBar(ratio)}  ${s.attended}/${s.held} · ${pct(s.percent)}`);
+    lines.push('');
   }
 
   lines.push(
-    '',
     `*Total:* ${attendance.total.attended}/${attendance.total.held} · ${pct(attendance.total.percent)}`,
     '',
     `_Live from Campus Connect · ${formatTime(attendance.fetchedAt)}_`
@@ -153,11 +153,11 @@ export function formatBunkReport(attendance, target) {
     } else {
       lines.push(head, '   no classes held yet');
     }
+    lines.push('');
   }
 
   const totalAdvice = bunkAdvice(attendance.total, target);
   lines.push(
-    '',
     totalAdvice.status === 'safe'
       ? `*Overall:* can skip *${totalAdvice.canSkip}*`
       : `*Overall:* must attend *${totalAdvice.mustAttend}* straight`
@@ -177,8 +177,9 @@ export function formatBelowTarget(attendance, target) {
     const advice = bunkAdvice(s, target);
     lines.push(`• *${cleanName(s.name)}* — ${pct(s.percent)} (${s.attended}/${s.held})`);
     lines.push(`   attend *${advice.mustAttend}* straight to recover`);
+    lines.push('');
   }
-  return lines.join('\n');
+  return lines.join('\n').trimEnd();
 }
 
 export function formatDailySummary(attendance, target) {
@@ -188,7 +189,7 @@ export function formatDailySummary(attendance, target) {
   const worst = below
     .slice(0, 3)
     .map((s) => `• ${cleanName(s.name)} — ${pct(s.percent)}`)
-    .join('\n');
+    .join('\n\n');
   return `${head}\n\n🔴 Below target:\n${worst}`;
 }
 
