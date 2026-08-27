@@ -1,0 +1,13 @@
+services:
+  - type: worker
+    name: aditya-attendance-bot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter # persistent disks need a paid plan — Render's free tier doesn't support them
+    envVars:
+      - key: SESSION_ENCRYPTION_KEY
+        sync: false # secret — you'll be prompted to paste it in when deploying the Blueprint
+    disk:
+      name: bot-data
+      mountPath: /app/data
+      sizeGB: 1
