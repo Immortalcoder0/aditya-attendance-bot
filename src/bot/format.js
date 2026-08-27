@@ -23,6 +23,12 @@ function cleanName(name) {
   return String(name ?? '').replace(/\s*\(minor Stream\)\s*/i, '');
 }
 
+/** Block-character fill bar — renders as a real visual, no image needed. */
+function progressBar(ratio, size = 10) {
+  const filled = Math.max(0, Math.min(size, Math.round(ratio * size)));
+  return '█'.repeat(filled) + '░'.repeat(size - filled);
+}
+
 export function formatMainMenu() {
   return [
     '*📚 Attendance Bot*',
@@ -82,8 +88,8 @@ export function formatOverall(attendance, target) {
   const lines = [
     `${statusIcon(ratio, target)} *Overall attendance*`,
     '',
-    `*${pct(total.percent)}*  (${total.attended}/${total.held} classes)`,
-    `Target: ${pct(target * 100)}`,
+    `${progressBar(ratio)}  *${pct(total.percent)}*`,
+    `(${total.attended}/${total.held} classes) · Target: ${pct(target * 100)}`,
     '',
   ];
 
@@ -109,7 +115,7 @@ export function formatSubjects(attendance, target) {
   for (const s of attendance.subjects) {
     const ratio = s.held > 0 ? s.attended / s.held : 0;
     lines.push(`${statusIcon(ratio, target)} *${cleanName(s.name)}*`);
-    lines.push(`   ${s.attended}/${s.held} · ${pct(s.percent)}`);
+    lines.push(`${progressBar(ratio)}  ${s.attended}/${s.held} · ${pct(s.percent)}`);
   }
 
   lines.push(
