@@ -237,6 +237,15 @@ export function formatLinkSuccess(attendance) {
   ].join('\n');
 }
 
+/** Auth confirmed, but the first attempt to actually fetch data didn't succeed. */
+export function formatLinkSuccessPending() {
+  return [
+    '✅ *Session linked!*',
+    '',
+    "I confirmed you're logged in, but couldn't pull your attendance numbers on this first try. I'll keep retrying in the background — try *1* from the menu again in a few minutes.",
+  ].join('\n');
+}
+
 export function formatLinkInvalid() {
   return [
     "❌ I found something cookie-shaped in that, but it looks invalid or already expired.",

@@ -56,7 +56,10 @@ function fakeStore(overrides = {}) {
 class MockSessionExpiredError extends Error {}
 
 /** Mocks session.js, client.js and chart.js, then imports a fresh commands.js. */
-async function loadCommandsWith(t, { sessionStatus, cookieHeader = 'cookie=x', fetchResult, chartError }) {
+async function loadCommandsWith(
+  t,
+  { sessionStatus, cookieHeader = 'cookie=x', fetchResult, chartError, keepAliveAlive = true, keepAliveError }
+) {
   t.mock.module('../portal/session.js', {
     namedExports: {
       ensureSession: async () => ({ status: sessionStatus, cookieHeader }),
@@ -65,6 +68,12 @@ async function loadCommandsWith(t, { sessionStatus, cookieHeader = 'cookie=x', f
   });
   t.mock.module('../portal/client.js', {
     namedExports: {
+      // Used by the link flow to confirm auth alone, decoupled from whether a
+      // full data fetch (fetchAttendance) also succeeds.
+      keepAlive: async (calledWithCookieHeader) => {
+        if (keepAliveError) throw keepAliveError;
+        return { alive: keepAliveAlive, cookieHeader: calledWithCookieHeader };
+      },
       fetchAttendance: async (calledWithCookieHeader) => {
         if (fetchResult?.expireSession) throw new MockSessionExpiredError('dead');
         if (fetchResult?.error) throw fetchResult.error;
@@ -288,6 +297,42 @@ test('settings: link flow via menu', async (t) => {
   assert.ok(
     store.calls.some((c) => c[0] === 'setSession' && c[1] === 'ASP.NET_SessionId=abc123; AuthToken=def456')
   );
+});
+
+test('link succeeds on auth alone even when the first data fetch fails', async (t) => {
+  // The actual bug fix: an account whose data fetch reliably fails must
+  // still be able to link (and get the session stored + polled), rather
+  // than being permanently blocked from ever linking at all.
+  const createCommandHandler = await loadCommandsWith(t, {
+    sessionStatus: 'ok',
+    keepAliveAlive: true,
+    fetchResult: { error: new Error('portal rejected this account for reasons under investigation') },
+  });
+  const store = fakeStore();
+  const { handle } = createCommandHandler({ store, log });
+
+  await handle('wa1', '/start');
+  await handle('wa1', '5');
+  await handle('wa1', '3');
+  const reply = await handle('wa1', 'ASP.NET_SessionId=abc123');
+
+  assert.match(asText(reply), /Session linked/);
+  assert.match(asText(reply), /keep retrying/);
+  assert.ok(store.calls.some((c) => c[0] === 'setSession'));
+});
+
+test('link fails cleanly when the cookie genuinely does not authenticate', async (t) => {
+  const createCommandHandler = await loadCommandsWith(t, { sessionStatus: 'ok', keepAliveAlive: false });
+  const store = fakeStore();
+  const { handle } = createCommandHandler({ store, log });
+
+  await handle('wa1', '/start');
+  await handle('wa1', '5');
+  await handle('wa1', '3');
+  const reply = await handle('wa1', 'ASP.NET_SessionId=abc123');
+
+  assert.match(asText(reply), /invalid or already expired/);
+  assert.ok(!store.calls.some((c) => c[0] === 'setSession'));
 });
 
 test('settings: invalid paste during link stays in the link flow for a retry', async (t) => {

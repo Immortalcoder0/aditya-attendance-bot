@@ -1,4 +1,4 @@
-import { fetchAttendance, SessionExpiredError } from '../portal/client.js';
+import { fetchAttendance, keepAlive, SessionExpiredError } from '../portal/client.js';
 import { ensureSession, SessionResult } from '../portal/session.js';
 import { extractCookieHeader } from './cookieInput.js';
 import { renderAttendanceChart } from './chart.js';
@@ -16,6 +16,7 @@ import {
   formatSessionExpired,
   formatLinkInstructions,
   formatLinkSuccess,
+  formatLinkSuccessPending,
   formatLinkInvalid,
   formatLinkUnrecognized,
 } from './format.js';
@@ -84,22 +85,43 @@ export function createCommandHandler({ store, log }) {
     }
   }
 
+  /**
+   * Linking only needs to confirm the cookie actually authenticates — that
+   * check (a plain HTTP GET) has been completely reliable in practice, unlike
+   * the heavier real-Chrome data fetch, which occasionally rejects an
+   * otherwise-valid, freshly-created session for reasons still under
+   * investigation. Requiring a full data fetch to succeed before saving the
+   * session meant an account hitting that issue could never link at all —
+   * and therefore never got the ongoing keepalive polling that might be
+   * exactly what it needs. Save the session on auth success alone, and treat
+   * the first data fetch as a bonus, not a gate.
+   */
   async function tryLinkCookie(waJid, rawPaste) {
     const cookieHeader = extractCookieHeader(rawPaste);
     if (!cookieHeader) return { ok: false, message: formatLinkUnrecognized() };
 
+    let alive, fresh;
     try {
-      const { attendance, cookieHeader: fresh } = await fetchAttendance(cookieHeader);
-      await store.setSession(waJid, fresh);
-      await store.saveSnapshot(waJid, attendance);
-      return { ok: true, message: formatLinkSuccess(attendance) };
+      ({ alive, cookieHeader: fresh } = await keepAlive(cookieHeader));
     } catch (err) {
-      if (err instanceof SessionExpiredError) return { ok: false, message: formatLinkInvalid() };
       log.warn({ err: err.message, waJid }, 'session validation failed');
       return {
         ok: false,
         message: "⚠️ Couldn't reach Campus Connect to validate that. Try pasting it again shortly.",
       };
+    }
+    if (!alive) return { ok: false, message: formatLinkInvalid() };
+
+    await store.setSession(waJid, fresh);
+
+    try {
+      const { attendance, cookieHeader: fresher } = await fetchAttendance(fresh);
+      if (fresher !== fresh) await store.setSession(waJid, fresher);
+      await store.saveSnapshot(waJid, attendance);
+      return { ok: true, message: formatLinkSuccess(attendance) };
+    } catch (err) {
+      log.warn({ err: err.message, waJid }, 'linked, but first data fetch failed');
+      return { ok: true, message: formatLinkSuccessPending() };
     }
   }
 
