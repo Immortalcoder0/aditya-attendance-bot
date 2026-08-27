@@ -77,6 +77,12 @@ export function createCommandHandler({ store, log }) {
       return { ok: true, attendance };
     } catch (err) {
       if (err instanceof SessionExpiredError) {
+        // This specific failure was previously silent — logged nowhere,
+        // making it impossible to trace after the fact. keepAlive had just
+        // confirmed this session alive moments earlier in ensureSession(),
+        // so a real-Chrome render redirecting to login anyway is worth
+        // seeing in the logs every time it happens.
+        log.warn({ waJid }, 'session confirmed alive by keepAlive, but render hit the login page anyway');
         await store.clearSession(waJid);
         return { ok: false, message: formatSessionExpired() };
       }
