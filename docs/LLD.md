@@ -157,9 +157,14 @@ Docker image: `node:20-bookworm-slim` + Google Chrome (real, not Chromium) + Xvf
 
 Required at runtime:
 - `SESSION_ENCRYPTION_KEY` — 64 hex chars (32 bytes), generate once and keep stable (rotating it invalidates every stored session)
-- A **persistent volume mounted at `/app/data`** — holds the WhatsApp link (`data/wa-auth`) and every user's encrypted session (`data/db.json`). Without it, every redeploy or restart forces a fresh WhatsApp QR scan and every linked user to relink.
+- Ideally, a **persistent volume mounted at `/app/data`** — holds the WhatsApp link (`data/wa-auth`) and every user's encrypted session (`data/db.json`). Without it, every redeploy or restart forces a fresh WhatsApp QR scan and every linked user to relink.
 - `--no-sandbox --disable-dev-shm-usage` are baked into `render.js`'s Chrome launch args — required for Chrome to run as root in a container; unrelated to the headless-vs-windowed finding in HLD §4.2.
 
-**Render:** deploy as a **Background Worker**, not a Web Service — this process has no need to receive inbound HTTP, and Web Services on the free tier sleep after 15 minutes of inactivity. `health.js` only starts a listener if `$PORT` is set, so it's a no-op on a Worker.
+**Render (current deployment target, see [`render.yaml`](../render.yaml)):** the free plan is Web Service only — Background Worker isn't offered on it, and the free plan has no persistent disk at all, at any price point below Starter. That forces a different tradeoff than a paid host with a volume:
 
-**Railway:** standard Dockerfile deploy; attach a volume at `/app/data` the same way.
+- Deployed as a free **Web Service** (not Worker) specifically so `health.js`'s HTTP listener has something to answer — that endpoint is also the ping target.
+- Free Web Services sleep after 15 minutes idle. [`.github/workflows/keepalive.yml`](../.github/workflows/keepalive.yml) pings the deployed URL every 10 minutes via GitHub Actions to prevent that sleep. This only addresses idle-sleep.
+- It does **not** address the missing persistent disk — `/app/data` lives in the container's ephemeral filesystem and is wiped on every redeploy and on any Render-initiated restart, independent of the ping. Everyone relinks when that happens.
+- Upgrading to Render's paid **Starter** plan adds a real persistent disk, removing this tradeoff entirely (config for that is preserved in git history at commit `2d9e9ba`, before the pivot to the free tier).
+
+**Railway:** standard Dockerfile deploy; attach a volume at `/app/data` the same way. No free tier as of 2026 — paid only.

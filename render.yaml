@@ -1,13 +1,17 @@
 services:
-  - type: worker
+  - type: web
     name: aditya-attendance-bot
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: starter # persistent disks need a paid plan — Render's free tier doesn't support them
+    plan: free
     envVars:
       - key: SESSION_ENCRYPTION_KEY
         sync: false # secret — you'll be prompted to paste it in when deploying the Blueprint
-    disk:
-      name: bot-data
-      mountPath: /app/data
-      sizeGB: 1
+
+# No persistent disk here on purpose — Render's free tier doesn't support one
+# at all (not a cost setting, a hard platform limit). That means the WhatsApp
+# link and every linked user's session live only in the container's ephemeral
+# filesystem: wiped on every redeploy and on any Render-initiated restart, not
+# just on a full 15-minute idle sleep. An external ping every <15 minutes
+# (see README) stops the idle-sleep specifically, but cannot prevent a wipe
+# from a redeploy or restart — those are a separate free-tier limitation.

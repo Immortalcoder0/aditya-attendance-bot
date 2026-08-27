@@ -80,7 +80,22 @@ docker build -t attendance-bot .
 docker run -e SESSION_ENCRYPTION_KEY=... -v $(pwd)/data:/app/data attendance-bot
 ```
 
-The volume mount is not optional — it holds the WhatsApp link and every linked user's encrypted session. See [docs/LLD.md](docs/LLD.md#deployment) for platform-specific notes (Render, Railway).
+Locally (or on any host with real persistent disk), the volume mount holds the WhatsApp link and every linked user's encrypted session across restarts.
+
+#### Deploying to Render (free tier)
+
+[`render.yaml`](render.yaml) is a Blueprint for Render's free Web Service plan — no credit card required. Deploy it:
+
+1. On [render.com](https://render.com), **New → Blueprint**, point it at this repo.
+2. When prompted, paste in a `SESSION_ENCRYPTION_KEY` (generate one with the `node -e ...` command above).
+3. Deploy. Render builds the Dockerfile and gives you a URL like `https://aditya-attendance-bot.onrender.com`.
+
+Two things to know about the free tier, both hard platform limits rather than settings:
+
+- **Idle sleep** — Render spins the service down after 15 minutes with no incoming HTTP traffic, then takes ~30–60s to wake back up on the next request. This repo's [`.github/workflows/keepalive.yml`](.github/workflows/keepalive.yml) pings the service every 10 minutes via GitHub Actions to keep it awake. To wire it up: in this repo's GitHub settings, go to **Settings → Secrets and variables → Actions → Variables**, add a repository variable named `RENDER_SERVICE_URL` set to your Render URL from step 3. The workflow starts running automatically once that variable exists (or trigger it manually from the Actions tab).
+- **No persistent disk on free tier** — this is not something the ping fixes. The WhatsApp link and everyone's linked session live only in the container's filesystem, which is wiped on every redeploy and on any Render-initiated restart. In practice this means re-scanning the WhatsApp QR code and everyone re-linking their account each time that happens. If that becomes too disruptive, Render's paid Starter plan adds a real persistent disk — the `disk:` block for that is in this file's git history (see commit `2d9e9ba`).
+
+See [docs/LLD.md](docs/LLD.md#deployment) for the fuller architectural writeup of this tradeoff.
 
 ## What this bot deliberately does not do
 
