@@ -3,8 +3,11 @@ import { bunkAdvice, subjectsBelow } from '../features/bunk.js';
 /**
  * WhatsApp message rendering.
  *
- * WhatsApp supports *bold*, _italic_ and ```monospace``` blocks. Tabular data goes
- * in a monospace block so columns line up on a phone.
+ * WhatsApp supports *bold*, _italic_ and ```monospace``` blocks, but monospace
+ * columns padded with spaces don't reliably line up on a phone — WhatsApp's
+ * font isn't perfectly fixed-width on every device, so padded alignment can
+ * come out ragged. Per-subject blocks (icon + full name on one line, numbers
+ * on the next) sidestep that entirely and never need to truncate a name.
  */
 
 const pct = (n) => `${Number(n).toFixed(2)}%`;
@@ -15,10 +18,9 @@ function statusIcon(ratio, target) {
   return '🔴';
 }
 
-/** Trim a course name to keep monospace rows from wrapping on narrow screens. */
-function shortName(name, max = 22) {
-  const clean = String(name ?? '').replace(/\s*\(minor Stream\)\s*/i, '');
-  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+/** Drop the redundant "(minor Stream)" suffix some course names carry. */
+function cleanName(name) {
+  return String(name ?? '').replace(/\s*\(minor Stream\)\s*/i, '');
 }
 
 export function formatMainMenu() {
@@ -102,23 +104,21 @@ export function formatOverall(attendance, target) {
 }
 
 export function formatSubjects(attendance, target) {
-  const rows = attendance.subjects.map((s) => {
-    const ratio = s.held > 0 ? s.attended / s.held : 0;
-    const name = shortName(s.name).padEnd(23);
-    const counts = `${s.attended}/${s.held}`.padEnd(8);
-    return `${statusIcon(ratio, target)} ${name}${counts}${pct(s.percent).padStart(7)}`;
-  });
+  const lines = ['*📋 Subject-wise attendance*', ''];
 
-  return [
-    '*📋 Subject-wise attendance*',
+  for (const s of attendance.subjects) {
+    const ratio = s.held > 0 ? s.attended / s.held : 0;
+    lines.push(`${statusIcon(ratio, target)} *${cleanName(s.name)}*`);
+    lines.push(`   ${s.attended}/${s.held} · ${pct(s.percent)}`);
+  }
+
+  lines.push(
     '',
-    '```',
-    ...rows,
-    '```',
     `*Total:* ${attendance.total.attended}/${attendance.total.held} · ${pct(attendance.total.percent)}`,
     '',
-    `_Live from Campus Connect · ${formatTime(attendance.fetchedAt)}_`,
-  ].join('\n');
+    `_Live from Campus Connect · ${formatTime(attendance.fetchedAt)}_`
+  );
+  return lines.join('\n');
 }
 
 export function formatBunkReport(attendance, target) {
@@ -127,7 +127,7 @@ export function formatBunkReport(attendance, target) {
   for (const s of attendance.subjects) {
     const advice = bunkAdvice(s, target);
     const ratio = s.held > 0 ? s.attended / s.held : 0;
-    const head = `${statusIcon(ratio, target)} *${shortName(s.name, 30)}* — ${pct(s.percent)}`;
+    const head = `${statusIcon(ratio, target)} *${cleanName(s.name)}* — ${pct(s.percent)}`;
 
     if (advice.status === 'safe') {
       lines.push(head, `   can skip *${advice.canSkip}*`);
@@ -158,7 +158,7 @@ export function formatBelowTarget(attendance, target) {
   const lines = [`🔴 *${below.length} subject${below.length === 1 ? '' : 's'} below ${pct(target * 100)}*`, ''];
   for (const s of below) {
     const advice = bunkAdvice(s, target);
-    lines.push(`• *${shortName(s.name, 30)}* — ${pct(s.percent)} (${s.attended}/${s.held})`);
+    lines.push(`• *${cleanName(s.name)}* — ${pct(s.percent)} (${s.attended}/${s.held})`);
     lines.push(`   attend *${advice.mustAttend}* straight to recover`);
   }
   return lines.join('\n');
@@ -170,7 +170,7 @@ export function formatDailySummary(attendance, target) {
   if (below.length === 0) return `${head}\n\n✅ All subjects above target.`;
   const worst = below
     .slice(0, 3)
-    .map((s) => `• ${shortName(s.name, 28)} — ${pct(s.percent)}`)
+    .map((s) => `• ${cleanName(s.name)} — ${pct(s.percent)}`)
     .join('\n');
   return `${head}\n\n🔴 Below target:\n${worst}`;
 }

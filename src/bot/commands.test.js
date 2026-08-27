@@ -7,6 +7,9 @@ import { PROFILE_HTML } from '../portal/__fixtures__/profile.js';
 const attendance = parseAttendance(PROFILE_HTML);
 const log = { info() {}, warn() {}, error() {} };
 
+/** A handler reply may be a single string or an array of separate messages. */
+const asText = (reply) => [].concat(reply ?? []).join('\n\n');
+
 function fakeStore(overrides = {}) {
   const user = {
     waJid: 'wa1',
@@ -112,22 +115,24 @@ test('main menu: "1" with no session redirects into the link flow', async (t) =>
 
   await handle('wa1', '/start');
   const reply = await handle('wa1', '1');
-  assert.match(reply, /Link your Campus Connect account/);
+  assert.match(asText(reply), /Link your Campus Connect account/);
 
   // Now in the link flow: a cookie-shaped paste should be processed, not ignored.
   const linkReply = await handle('wa1', 'ASP.NET_SessionId=abc123');
-  assert.match(linkReply, /Session linked/);
+  assert.match(asText(linkReply), /Session linked/);
 });
 
-test('main menu: "1" with a live session shows live overall attendance, then the menu again', async (t) => {
+test('main menu: "1" with a live session shows live overall attendance as its own message, then the menu separately', async (t) => {
   const createCommandHandler = await loadCommandsWith(t, { sessionStatus: 'ok' });
   const store = fakeStore({ session: 'cookie=x' });
   const { handle } = createCommandHandler({ store, log });
 
   await handle('wa1', '/start');
   const reply = await handle('wa1', '1');
-  assert.match(reply, /66\.67%/);
-  assert.match(reply, /Attendance Bot/); // menu re-shown at the bottom
+  assert.ok(Array.isArray(reply));
+  assert.equal(reply.length, 2);
+  assert.match(reply[0], /66\.67%/);
+  assert.match(reply[1], /Attendance Bot/); // menu re-shown as a separate message
   assert.ok(store.calls.some((c) => c[0] === 'saveSnapshot'));
 });
 
@@ -138,7 +143,7 @@ test('main menu: "3" shows the bunk calculator', async (t) => {
 
   await handle('wa1', '/start');
   const reply = await handle('wa1', '3');
-  assert.match(reply, /Bunk calculator/);
+  assert.match(asText(reply), /Bunk calculator/);
 });
 
 test('main menu: an unrecognized reply is silently ignored, not an error message', async (t) => {
@@ -201,7 +206,7 @@ test('settings: change target end to end', async (t) => {
   assert.match(prompt, /number/i);
 
   const result = await handle('wa1', '80');
-  assert.match(result, /80%/);
+  assert.match(asText(result), /80%/);
   assert.equal(store.user.target, 0.8);
 });
 
@@ -241,7 +246,7 @@ test('settings: link flow via menu', async (t) => {
   assert.match(instructions, /DevTools/);
 
   const linked = await handle('wa1', 'ASP.NET_SessionId=abc123; AuthToken=def456');
-  assert.match(linked, /Session linked/);
+  assert.match(asText(linked), /Session linked/);
   assert.ok(
     store.calls.some((c) => c[0] === 'setSession' && c[1] === 'ASP.NET_SessionId=abc123; AuthToken=def456')
   );
@@ -260,7 +265,7 @@ test('settings: invalid paste during link stays in the link flow for a retry', a
 
   // Still in the link flow — a real paste right after should still work.
   const goodReply = await handle('wa1', 'ASP.NET_SessionId=abc123');
-  assert.match(goodReply, /Session linked/);
+  assert.match(asText(goodReply), /Session linked/);
 });
 
 test('settings: unlink requires confirmation', async (t) => {

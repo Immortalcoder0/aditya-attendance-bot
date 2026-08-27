@@ -118,7 +118,7 @@ export function createCommandHandler({ store, log }) {
             : text === '3'
               ? formatBunkReport(result.attendance, target)
               : formatBelowTarget(result.attendance, target);
-      return `${formatted}\n\n${formatMainMenu()}`;
+      return [formatted, formatMainMenu()];
     }
 
     if (text === '5') {
@@ -160,14 +160,14 @@ export function createCommandHandler({ store, log }) {
     }
     await store.updateUser(waJid, { target: value / 100 });
     flow.set(waJid, Step.SETTINGS_MENU);
-    return `✅ Target set to *${value}%*.\n\n${formatSettingsMenu(store.getUser(waJid))}`;
+    return [`✅ Target set to *${value}%*.`, formatSettingsMenu(store.getUser(waJid))];
   }
 
   async function handleAwaitingCookie(waJid, text) {
     const result = await tryLinkCookie(waJid, text);
     if (result.ok) {
       flow.set(waJid, Step.MAIN_MENU);
-      return `${result.message}\n\n${formatMainMenu()}`;
+      return [result.message, formatMainMenu()];
     }
     return result.message; // stay in AWAITING_COOKIE so a retry paste just works
   }
